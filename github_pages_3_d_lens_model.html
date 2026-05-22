@@ -464,20 +464,23 @@
           </div>
           <div class="row">
             <label for="resolution">网格精度</label>
-            <input id="resolutionRange" type="range" min="24" max="150" step="2" value="76" />
-            <input id="resolution" type="number" min="24" max="150" step="2" value="76" />
+            <input id="resolutionRange" type="range" min="24" max="110" step="2" value="46" />
+            <input id="resolution" type="number" min="24" max="110" step="2" value="46" />
           </div>
           <label class="check-row">
             <input id="xBoost" type="checkbox" checked /> 横向缩放同时增强形变，使参数变化更明显
           </label>
           <label class="check-row">
-            <input id="showWire" type="checkbox" checked /> 显示网格线
+            <input id="showWire" type="checkbox" /> 显示网格线
           </label>
           <label class="check-row">
             <input id="showRays" type="checkbox" checked /> 显示光线示意
           </label>
           <label class="check-row">
             <input id="showProfiles" type="checkbox" checked /> 显示水平/垂直截面轮廓
+          </label>
+          <label class="check-row">
+            <input id="showAstigTexture" type="checkbox" checked /> 显示散光曲率纹理，让轴位变化更明显
           </label>
         </section>
 
@@ -530,7 +533,7 @@
     scene.background = new THREE.Color(0x070a12);
 
     const camera = new THREE.PerspectiveCamera(42, 1, 0.05, 100);
-    camera.position.set(5.2, -6.0, 3.6);
+    camera.position.set(4.8, -6.4, 3.2);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -541,6 +544,8 @@
     controls.enableDamping = true;
     controls.dampingFactor = 0.07;
     controls.target.set(0, 0, 0);
+    camera.lookAt(controls.target);
+    controls.update();
     controls.minDistance = 2.2;
     controls.maxDistance = 18;
 
@@ -586,6 +591,7 @@
       p.showWire = $('showWire').checked;
       p.showRays = $('showRays').checked;
       p.showProfiles = $('showProfiles').checked;
+      p.showAstigTexture = $('showAstigTexture').checked;
       p.resolution = Math.round(p.resolution / 2) * 2;
       p.axis = clamp(p.axis, 0, 180);
       return p;
@@ -605,7 +611,7 @@
         range.addEventListener('input', () => {
           syncPair(key, 'range');
           $('preset').value = 'custom';
-          rebuild();
+          scheduleRebuild();
         });
         num.addEventListener('input', () => {
           const min = Number(num.min);
@@ -615,22 +621,23 @@
           }
           syncPair(key, 'number');
           $('preset').value = 'custom';
-          rebuild();
+          scheduleRebuild();
         });
       }
 
-      for (const id of ['autoMin', 'xBoost', 'showWire', 'showRays', 'showProfiles']) {
+      for (const id of ['autoMin', 'xBoost', 'showWire', 'showRays', 'showProfiles', 'showAstigTexture']) {
         $(id).addEventListener('change', rebuild);
       }
 
       $('preset').addEventListener('change', () => {
         applyPreset($('preset').value);
-        rebuild();
+        scheduleRebuild();
       });
 
       $('resetView').addEventListener('click', () => {
-        camera.position.set(5.2, -6.0, 3.6);
+        camera.position.set(4.8, -6.4, 3.2);
         controls.target.set(0, 0, 0);
+        camera.lookAt(controls.target);
         controls.update();
       });
 
@@ -651,7 +658,8 @@
           xb: p.xBoost ? 1 : 0,
           wire: p.showWire ? 1 : 0,
           rays: p.showRays ? 1 : 0,
-          prof: p.showProfiles ? 1 : 0
+          prof: p.showProfiles ? 1 : 0,
+          astig: p.showAstigTexture ? 1 : 0
         });
         const url = `${location.origin}${location.pathname}?${qs.toString()}`;
         try {
@@ -706,6 +714,7 @@
       if (qs.has('wire')) $('showWire').checked = qs.get('wire') !== '0';
       if (qs.has('rays')) $('showRays').checked = qs.get('rays') !== '0';
       if (qs.has('prof')) $('showProfiles').checked = qs.get('prof') !== '0';
+      if (qs.has('astig')) $('showAstigTexture').checked = qs.get('astig') !== '0';
     }
 
     function makeLensGeometry(params) {
@@ -740,7 +749,7 @@
           const rawThickness = baseScene + gain * profile;
           minRaw = Math.min(minRaw, rawThickness);
           maxRaw = Math.max(maxRaw, rawThickness);
-          samples.push({ x, y, r, theta, thickness: rawThickness, powerTerm });
+          samples.push({ x, y, r, theta, thickness: rawThickness, powerTerm, perp });
         }
       }
 
@@ -832,8 +841,52 @@
         maxZ,
         samples,
         pointCount,
-        axisRad
+        axisRad,
+        shift,
+        gain,
+        baseScene,
+        minScene,
+        sinA,
+        cosA
       };
+    }
+
+    function lensThicknessAtUnit(params, lensData, x, y) {
+      const r2 = x * x + y * y;
+      const perp = -lensData.sinA * x + lensData.cosA * y;
+      return Math.max(
+        lensData.minScene * 0.35,
+        lensData.baseScene + lensData.gain * (-(params.sphere * r2 + params.cylinder * perp * perp)) + lensData.shift
+      );
+    }
+
+    function makeRimLines(params, lensData) {
+      const group = new THREE.Group();
+      const pos = lensData.geometry.getAttribute('position');
+      const front = [];
+      const back = [];
+      const outerStart = lensData.rings * lensData.sectors;
+      for (let j = 0; j <= lensData.sectors; j++) {
+        const i = outerStart + (j % lensData.sectors);
+        front.push(new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i) + 0.012));
+        const bi = lensData.pointCount + i;
+        back.push(new THREE.Vector3(pos.getX(bi), pos.getY(bi), pos.getZ(bi) - 0.012));
+      }
+      const rimMat = new THREE.LineBasicMaterial({ color: 0xe0f2fe, transparent: true, opacity: 0.72 });
+      const sideMat = new THREE.LineBasicMaterial({ color: 0x93c5fd, transparent: true, opacity: 0.28 });
+      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(front), rimMat));
+      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(back), rimMat));
+      const side = [];
+      const stride = Math.max(6, Math.round(lensData.sectors / 24));
+      for (let j = 0; j < lensData.sectors; j += stride) {
+        const i = outerStart + j;
+        const bi = lensData.pointCount + i;
+        side.push(new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i)));
+        side.push(new THREE.Vector3(pos.getX(bi), pos.getY(bi), pos.getZ(bi)));
+      }
+      const sideGeom = new THREE.BufferGeometry().setFromPoints(side);
+      group.add(new THREE.LineSegments(sideGeom, sideMat));
+      return group;
     }
 
     function makeAxisLines(params, lensData) {
@@ -863,49 +916,16 @@
       const matXBack = new THREE.LineBasicMaterial({ color: 0x60a5fa, transparent: true, opacity: 0.55 });
       const matYFront = new THREE.LineBasicMaterial({ color: 0xc4b5fd, transparent: true, opacity: 0.95 });
       const matYBack = new THREE.LineBasicMaterial({ color: 0xa78bfa, transparent: true, opacity: 0.55 });
-      const axisRad = params.axis * DEG;
-      const sinA = Math.sin(axisRad);
-      const cosA = Math.cos(axisRad);
       const radiusScene = lensData.radiusScene;
-      const diameterScale = params.diameter / 65;
-      const xBoostGain = params.xBoost ? Math.sqrt(params.xScale) : 1;
-      const powerIndexCorrection = 1.6 / params.refractiveIndex;
-      const gain = 0.044 * params.curveGain * xBoostGain * diameterScale * diameterScale * powerIndexCorrection;
-      const baseScene = params.baseThickness * UNIT_PER_MM_AT_DEFAULT;
-      const minScene = params.minThickness * UNIT_PER_MM_AT_DEFAULT;
-
-      function calcShift() {
-        let minRaw = Infinity;
-        const steps = 220;
-        for (let i = 0; i <= steps; i++) {
-          const rr = i / steps;
-          for (let j = 0; j < steps; j += 4) {
-            const th = (j / steps) * Math.PI * 2;
-            const x = rr * Math.cos(th);
-            const y = rr * Math.sin(th);
-            const perp = -sinA * x + cosA * y;
-            const raw = baseScene + gain * (-(params.sphere * rr * rr + params.cylinder * perp * perp));
-            minRaw = Math.min(minRaw, raw);
-          }
-        }
-        return params.autoMin ? (minScene - minRaw) : Math.max(0, minScene - minRaw);
-      }
-
-      const shift = calcShift();
-      function thicknessAt(x, y) {
-        const r2 = x * x + y * y;
-        const perp = -sinA * x + cosA * y;
-        return Math.max(minScene * 0.35, baseScene + gain * (-(params.sphere * r2 + params.cylinder * perp * perp)) + shift);
-      }
 
       function addLine(axisName, front, mat) {
         const pts = [];
-        const steps = 160;
+        const steps = 120;
         for (let i = 0; i <= steps; i++) {
           const u = -1 + (2 * i) / steps;
           const x = axisName === 'x' ? u : 0;
           const y = axisName === 'y' ? u : 0;
-          const t = thicknessAt(x, y);
+          const t = lensThicknessAtUnit(params, lensData, x, y);
           pts.push(new THREE.Vector3(x * radiusScene * params.xScale, y * radiusScene, front ? t / 2 + 0.018 : -t / 2 - 0.018));
         }
         group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
@@ -915,6 +935,35 @@
       addLine('x', false, matXBack);
       addLine('y', true, matYFront);
       addLine('y', false, matYBack);
+      return group;
+    }
+
+    function makeAstigTexture(params, lensData) {
+      const group = new THREE.Group();
+      if (Math.abs(params.cylinder) < 0.125) return group;
+      const radiusScene = lensData.radiusScene;
+      const axis = params.axis * DEG;
+      const cosA = Math.cos(axis);
+      const sinA = Math.sin(axis);
+      const mat = new THREE.LineBasicMaterial({
+        color: params.cylinder < 0 ? 0xf472b6 : 0x2dd4bf,
+        transparent: true,
+        opacity: 0.48
+      });
+      for (let k = -4; k <= 4; k++) {
+        const u = k / 5;
+        const half = Math.sqrt(Math.max(0, 1 - u * u));
+        const pts = [];
+        const steps = 80;
+        for (let i = 0; i <= steps; i++) {
+          const v = -half + (2 * half * i) / steps;
+          const x = cosA * v - sinA * u;
+          const y = sinA * v + cosA * u;
+          const t = lensThicknessAtUnit(params, lensData, x, y);
+          pts.push(new THREE.Vector3(x * radiusScene * params.xScale, y * radiusScene, t / 2 + 0.028));
+        }
+        group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
+      }
       return group;
     }
 
@@ -985,6 +1034,15 @@
       });
     }
 
+    function scheduleRebuild() {
+      if (scheduleRebuild.queued) return;
+      scheduleRebuild.queued = true;
+      requestAnimationFrame(() => {
+        scheduleRebuild.queued = false;
+        rebuild();
+      });
+    }
+
     function rebuild() {
       const params = getParams();
       if (lensGroup) {
@@ -995,23 +1053,19 @@
       const lensData = makeLensGeometry(params);
       lensGroup = new THREE.Group();
 
-      const material = new THREE.MeshPhysicalMaterial({
+      const material = new THREE.MeshStandardMaterial({
         vertexColors: true,
         transparent: true,
         opacity: params.opacity,
-        roughness: 0.22,
+        roughness: 0.18,
         metalness: 0.0,
-        transmission: 0.35,
-        thickness: 0.8,
         side: THREE.DoubleSide,
         depthWrite: false
       });
       const mesh = new THREE.Mesh(lensData.geometry, material);
       lensGroup.add(mesh);
 
-      const edgeMat = new THREE.LineBasicMaterial({ color: 0xe0f2fe, transparent: true, opacity: 0.55 });
-      const edgeGeom = new THREE.EdgesGeometry(lensData.geometry, 24);
-      lensGroup.add(new THREE.LineSegments(edgeGeom, edgeMat));
+      lensGroup.add(makeRimLines(params, lensData));
 
       if (params.showWire) {
         const wireGeom = new THREE.WireframeGeometry(lensData.geometry);
@@ -1020,6 +1074,7 @@
       }
 
       lensGroup.add(makeAxisLines(params, lensData));
+      if (params.showAstigTexture) lensGroup.add(makeAstigTexture(params, lensData));
       if (params.showProfiles) lensGroup.add(makeProfiles(params, lensData));
       if (params.showRays) lensGroup.add(makeRays(params, lensData));
 
@@ -1050,7 +1105,8 @@
 
       const axis = Math.round(params.axis);
       const rx = `${formatD(params.sphere)} ${params.cylinder >= 0 ? '+' : ''}${params.cylinder.toFixed(2)}D × ${axis}°`;
-      $('rxOut').innerHTML = `<strong>等效处方：</strong>${rx}<br><strong>模型判断：</strong>${type}<br><strong>横向缩放：</strong>×${params.xScale.toFixed(2)}；<strong>曲率夸张：</strong>×${params.curveGain.toFixed(2)}`;
+      const axisNote = Math.abs(params.cylinder) < 0.125 ? '柱镜 C≈0，轴位没有实际几何意义' : '轴位会旋转柱镜/散光曲率方向，圆形透明片本身不一定容易肉眼看出';
+      $('rxOut').innerHTML = `<strong>等效处方：</strong>${rx}<br><strong>模型判断：</strong>${type}<br><strong>轴位说明：</strong>${axisNote}<br><strong>横向缩放：</strong>×${params.xScale.toFixed(2)}；<strong>曲率夸张：</strong>×${params.curveGain.toFixed(2)}`;
 
       const tooMuch = (maxMm - minMm) > 20 || maxMm > 28;
       if (tooMuch) {
@@ -1085,7 +1141,7 @@
     bindInputs();
     loadFromQuery();
     onResize();
-    rebuild();
+    scheduleRebuild();
     animate();
   </script>
 </body>
