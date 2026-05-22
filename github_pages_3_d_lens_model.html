@@ -1,0 +1,1092 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>3D 圆镜片模型｜近视 / 远视 / 散光矫治镜片可视化</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #070a12;
+      --panel: rgba(16, 23, 42, 0.78);
+      --panel2: rgba(30, 41, 59, 0.72);
+      --line: rgba(148, 163, 184, 0.25);
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent2: #a78bfa;
+      --good: #34d399;
+      --warn: #fbbf24;
+      --bad: #fb7185;
+      --shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+      --radius: 18px;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 20% 10%, rgba(56, 189, 248, 0.14), transparent 34%),
+        radial-gradient(circle at 80% 4%, rgba(167, 139, 250, 0.16), transparent 32%),
+        linear-gradient(145deg, #05070d 0%, #0b1020 48%, #070a12 100%);
+      color: var(--text);
+    }
+
+    button, input, select {
+      font: inherit;
+    }
+
+    .app {
+      height: 100%;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 390px;
+      gap: 14px;
+      padding: 14px;
+    }
+
+    .stage {
+      position: relative;
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: rgba(2, 6, 23, 0.46);
+      box-shadow: var(--shadow);
+    }
+
+    #viewport {
+      width: 100%;
+      height: 100%;
+      min-height: 360px;
+    }
+
+    .title-card {
+      position: absolute;
+      left: 16px;
+      top: 16px;
+      max-width: min(560px, calc(100% - 32px));
+      padding: 13px 14px;
+      border-radius: 16px;
+      background: rgba(15, 23, 42, 0.70);
+      border: 1px solid rgba(148, 163, 184, 0.23);
+      backdrop-filter: blur(16px);
+      pointer-events: none;
+    }
+
+    .title-card h1 {
+      margin: 0 0 7px;
+      font-size: 18px;
+      letter-spacing: 0.02em;
+    }
+
+    .title-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .legend {
+      position: absolute;
+      left: 16px;
+      bottom: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      pointer-events: none;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 9px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.72);
+      border: 1px solid rgba(148, 163, 184, 0.22);
+      color: var(--muted);
+      font-size: 12px;
+      backdrop-filter: blur(14px);
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      display: inline-block;
+      background: var(--accent);
+    }
+
+    .dot.axis { background: #fb7185; }
+    .dot.perp { background: #fbbf24; }
+    .dot.ray { background: #38bdf8; }
+
+    .panel {
+      min-width: 0;
+      height: 100%;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+
+    .panel-header {
+      padding: 16px 16px 12px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+    }
+
+    .panel-header h2 {
+      margin: 0 0 8px;
+      font-size: 16px;
+    }
+
+    .panel-header .sub {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12.5px;
+      line-height: 1.5;
+    }
+
+    .controls {
+      padding: 14px 14px 18px;
+      overflow: auto;
+    }
+
+    .group {
+      margin-bottom: 13px;
+      padding: 12px;
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      border-radius: 16px;
+      background: rgba(15, 23, 42, 0.45);
+    }
+
+    .group h3 {
+      margin: 0 0 12px;
+      font-size: 13px;
+      color: #dbeafe;
+      letter-spacing: 0.01em;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 118px minmax(0, 1fr) 76px;
+      gap: 10px;
+      align-items: center;
+      margin: 10px 0;
+    }
+
+    .row label {
+      color: var(--muted);
+      font-size: 12.5px;
+      line-height: 1.25;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    input[type="number"], select {
+      width: 100%;
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      background: rgba(2, 6, 23, 0.55);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 7px 8px;
+      outline: none;
+    }
+
+    input[type="number"]:focus, select:focus {
+      border-color: rgba(56, 189, 248, 0.75);
+      box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.12);
+    }
+
+    .select-row {
+      display: grid;
+      grid-template-columns: 118px minmax(0, 1fr);
+      gap: 10px;
+      align-items: center;
+      margin: 8px 0 12px;
+    }
+
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 9px 0;
+      color: var(--muted);
+      font-size: 12.5px;
+      user-select: none;
+    }
+
+    input[type="checkbox"] {
+      accent-color: var(--accent);
+      width: 16px;
+      height: 16px;
+    }
+
+    .mini-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .btn {
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      background: rgba(2, 6, 23, 0.45);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 9px 10px;
+      cursor: pointer;
+      transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      border-color: rgba(56, 189, 248, 0.55);
+      background: rgba(14, 165, 233, 0.12);
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .stat {
+      padding: 10px;
+      border-radius: 13px;
+      background: rgba(2, 6, 23, 0.48);
+      border: 1px solid rgba(148, 163, 184, 0.14);
+    }
+
+    .stat .k {
+      display: block;
+      color: var(--muted);
+      font-size: 11.5px;
+      margin-bottom: 5px;
+    }
+
+    .stat .v {
+      font-size: 14px;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .rx {
+      padding: 10px 11px;
+      margin-top: 10px;
+      border-radius: 13px;
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.12), rgba(167, 139, 250, 0.10));
+      border: 1px solid rgba(56, 189, 248, 0.18);
+      color: #e0f2fe;
+      font-size: 12.5px;
+      line-height: 1.55;
+    }
+
+    .formula {
+      margin-top: 10px;
+      padding: 10px 11px;
+      border-radius: 13px;
+      background: rgba(2, 6, 23, 0.42);
+      border: 1px dashed rgba(148, 163, 184, 0.28);
+      color: var(--muted);
+      font-size: 12.3px;
+      line-height: 1.55;
+    }
+
+    code {
+      color: #bae6fd;
+      background: rgba(56, 189, 248, 0.10);
+      padding: 1px 5px;
+      border-radius: 6px;
+    }
+
+    .toast {
+      position: absolute;
+      right: 16px;
+      bottom: 16px;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: all 180ms ease;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(15, 23, 42, 0.80);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      color: #dbeafe;
+      font-size: 12.5px;
+      pointer-events: none;
+      backdrop-filter: blur(14px);
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .warning {
+      color: var(--warn);
+    }
+
+    @media (max-width: 980px) {
+      html, body { overflow: auto; }
+      .app {
+        height: auto;
+        min-height: 100%;
+        grid-template-columns: 1fr;
+      }
+      .stage { height: 62vh; min-height: 460px; }
+      .panel { height: auto; overflow: visible; }
+      .controls { overflow: visible; }
+    }
+
+    @media (max-width: 560px) {
+      .app { padding: 9px; gap: 9px; }
+      .stage { min-height: 430px; }
+      .title-card { left: 10px; top: 10px; }
+      .legend { left: 10px; bottom: 10px; }
+      .row { grid-template-columns: 96px minmax(0, 1fr) 64px; gap: 7px; }
+      .select-row { grid-template-columns: 96px minmax(0, 1fr); }
+      .stats { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="stage" aria-label="3D 镜片视图">
+      <div id="viewport"></div>
+      <div class="title-card">
+        <h1>3D 圆镜片模型</h1>
+        <p>近视用负球镜：边缘更厚；远视用正球镜：中心更厚；散光用柱镜：不同方向曲率不同。拖拽旋转，滚轮缩放，右键平移。</p>
+      </div>
+      <div class="legend">
+        <span class="pill"><span class="dot axis"></span>红线：柱镜轴位</span>
+        <span class="pill"><span class="dot perp"></span>黄线：柱镜最大作用方向</span>
+        <span class="pill"><span class="dot ray"></span>蓝线：光线示意</span>
+      </div>
+      <div class="toast" id="toast">已复制</div>
+    </section>
+
+    <aside class="panel">
+      <div class="panel-header">
+        <h2>参数控制</h2>
+        <p class="sub">这是可视化模型，不等同于真实镜片加工数据；横向缩放和曲率夸张用于让形变更容易观察。</p>
+      </div>
+
+      <div class="controls">
+        <section class="group">
+          <h3>处方与镜片类型</h3>
+          <div class="select-row">
+            <label for="preset">快速预设</label>
+            <select id="preset">
+              <option value="custom">自定义</option>
+              <option value="myopia">近视矫正：-3.00D 球镜</option>
+              <option value="hyperopia">远视矫正：+3.00D 球镜</option>
+              <option value="astigMinus">近视散光：-2.00D / -1.50D × 180</option>
+              <option value="astigPlus">远视散光：+2.00D / +1.50D × 90</option>
+              <option value="mixed">混合散光：+1.00D / -3.00D × 45</option>
+            </select>
+          </div>
+
+          <div class="row">
+            <label for="sphere">球镜 S / D</label>
+            <input id="sphereRange" type="range" min="-12" max="12" step="0.25" value="-3" />
+            <input id="sphere" type="number" min="-12" max="12" step="0.25" value="-3" />
+          </div>
+          <div class="row">
+            <label for="cylinder">柱镜 C / D</label>
+            <input id="cylinderRange" type="range" min="-8" max="8" step="0.25" value="0" />
+            <input id="cylinder" type="number" min="-8" max="8" step="0.25" value="0" />
+          </div>
+          <div class="row">
+            <label for="axis">轴位 Axis / °</label>
+            <input id="axisRange" type="range" min="0" max="180" step="1" value="180" />
+            <input id="axis" type="number" min="0" max="180" step="1" value="180" />
+          </div>
+        </section>
+
+        <section class="group">
+          <h3>几何参数</h3>
+          <div class="row">
+            <label for="diameter">镜片直径 / mm</label>
+            <input id="diameterRange" type="range" min="35" max="85" step="1" value="65" />
+            <input id="diameter" type="number" min="35" max="85" step="1" value="65" />
+          </div>
+          <div class="row">
+            <label for="baseThickness">基础厚度 / mm</label>
+            <input id="baseThicknessRange" type="range" min="0.5" max="10" step="0.1" value="2.2" />
+            <input id="baseThickness" type="number" min="0.5" max="10" step="0.1" value="2.2" />
+          </div>
+          <div class="row">
+            <label for="minThickness">最小厚度 / mm</label>
+            <input id="minThicknessRange" type="range" min="0.2" max="5" step="0.1" value="0.8" />
+            <input id="minThickness" type="number" min="0.2" max="5" step="0.1" value="0.8" />
+          </div>
+          <div class="row">
+            <label for="refractiveIndex">折射率 n</label>
+            <input id="refractiveIndexRange" type="range" min="1.49" max="1.74" step="0.01" value="1.60" />
+            <input id="refractiveIndex" type="number" min="1.49" max="1.74" step="0.01" value="1.60" />
+          </div>
+          <label class="check-row">
+            <input id="autoMin" type="checkbox" checked /> 自动平移厚度，让最薄处等于“最小厚度”
+          </label>
+        </section>
+
+        <section class="group">
+          <h3>可视化增强</h3>
+          <div class="row">
+            <label for="xScale">横向缩放 ×</label>
+            <input id="xScaleRange" type="range" min="0.5" max="6" step="0.05" value="1.00" />
+            <input id="xScale" type="number" min="0.5" max="6" step="0.05" value="1.00" />
+          </div>
+          <div class="row">
+            <label for="curveGain">曲率夸张 ×</label>
+            <input id="curveGainRange" type="range" min="0.1" max="8" step="0.05" value="1.60" />
+            <input id="curveGain" type="number" min="0.1" max="8" step="0.05" value="1.60" />
+          </div>
+          <div class="row">
+            <label for="opacity">透明度</label>
+            <input id="opacityRange" type="range" min="0.18" max="1" step="0.01" value="0.64" />
+            <input id="opacity" type="number" min="0.18" max="1" step="0.01" value="0.64" />
+          </div>
+          <div class="row">
+            <label for="resolution">网格精度</label>
+            <input id="resolutionRange" type="range" min="24" max="150" step="2" value="76" />
+            <input id="resolution" type="number" min="24" max="150" step="2" value="76" />
+          </div>
+          <label class="check-row">
+            <input id="xBoost" type="checkbox" checked /> 横向缩放同时增强形变，使参数变化更明显
+          </label>
+          <label class="check-row">
+            <input id="showWire" type="checkbox" checked /> 显示网格线
+          </label>
+          <label class="check-row">
+            <input id="showRays" type="checkbox" checked /> 显示光线示意
+          </label>
+          <label class="check-row">
+            <input id="showProfiles" type="checkbox" checked /> 显示水平/垂直截面轮廓
+          </label>
+        </section>
+
+        <section class="group">
+          <h3>模型读数</h3>
+          <div class="stats">
+            <div class="stat"><span class="k">最薄处</span><span class="v" id="minOut">-</span></div>
+            <div class="stat"><span class="k">最厚处</span><span class="v" id="maxOut">-</span></div>
+            <div class="stat"><span class="k">厚度差</span><span class="v" id="diffOut">-</span></div>
+            <div class="stat"><span class="k">估算焦距</span><span class="v" id="focusOut">-</span></div>
+          </div>
+          <div class="rx" id="rxOut">-</div>
+          <div class="formula">
+            形变核心：<code>厚度轮廓 ∝ -(S · r² + C · p⊥²)</code>。其中 <code>S</code> 为球镜，<code>C</code> 为柱镜，<code>p⊥</code> 是垂直于轴位方向的坐标。负度数让边缘更厚，正度数让中心更厚。
+          </div>
+          <div class="mini-grid">
+            <button class="btn" id="resetView">重置视角</button>
+            <button class="btn" id="copyLink">复制参数链接</button>
+          </div>
+        </section>
+      </div>
+    </aside>
+  </main>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    const $ = (id) => document.getElementById(id);
+
+    const paired = [
+      'sphere', 'cylinder', 'axis', 'diameter', 'baseThickness', 'minThickness',
+      'refractiveIndex', 'xScale', 'curveGain', 'opacity', 'resolution'
+    ];
+
+    const UNIT_PER_MM_AT_DEFAULT = 2.2 / 32.5;
+    const DEG = Math.PI / 180;
+
+    const viewport = $('viewport');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070a12);
+
+    const camera = new THREE.PerspectiveCamera(42, 1, 0.05, 100);
+    camera.position.set(5.2, -6.0, 3.6);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    viewport.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.07;
+    controls.target.set(0, 0, 0);
+    controls.minDistance = 2.2;
+    controls.maxDistance = 18;
+
+    const ambient = new THREE.HemisphereLight(0xdbeafe, 0x0f172a, 2.2);
+    scene.add(ambient);
+
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
+    keyLight.position.set(4, -5, 7);
+    scene.add(keyLight);
+
+    const rimLight = new THREE.DirectionalLight(0x7dd3fc, 1.25);
+    rimLight.position.set(-5, 4, 3);
+    scene.add(rimLight);
+
+    const grid = new THREE.GridHelper(9, 18, 0x334155, 0x1e293b);
+    grid.rotation.x = Math.PI / 2;
+    grid.position.z = -1.15;
+    grid.material.opacity = 0.28;
+    grid.material.transparent = true;
+    scene.add(grid);
+
+    let lensGroup = null;
+    let currentStats = null;
+
+    function clamp(v, min, max) {
+      return Math.min(max, Math.max(min, v));
+    }
+
+    function signed(v, digits = 2) {
+      const n = Number(v);
+      return `${n >= 0 ? '+' : ''}${n.toFixed(digits)}`;
+    }
+
+    function formatD(v) {
+      return `${signed(v, 2)}D`;
+    }
+
+    function getParams() {
+      const p = {};
+      for (const key of paired) p[key] = Number($(key).value);
+      p.autoMin = $('autoMin').checked;
+      p.xBoost = $('xBoost').checked;
+      p.showWire = $('showWire').checked;
+      p.showRays = $('showRays').checked;
+      p.showProfiles = $('showProfiles').checked;
+      p.resolution = Math.round(p.resolution / 2) * 2;
+      p.axis = clamp(p.axis, 0, 180);
+      return p;
+    }
+
+    function syncPair(key, source) {
+      const num = $(key);
+      const range = $(`${key}Range`);
+      if (source === 'range') num.value = range.value;
+      if (source === 'number') range.value = num.value;
+    }
+
+    function bindInputs() {
+      for (const key of paired) {
+        const num = $(key);
+        const range = $(`${key}Range`);
+        range.addEventListener('input', () => {
+          syncPair(key, 'range');
+          $('preset').value = 'custom';
+          rebuild();
+        });
+        num.addEventListener('input', () => {
+          const min = Number(num.min);
+          const max = Number(num.max);
+          if (Number.isFinite(min) && Number.isFinite(max)) {
+            num.value = clamp(Number(num.value), min, max);
+          }
+          syncPair(key, 'number');
+          $('preset').value = 'custom';
+          rebuild();
+        });
+      }
+
+      for (const id of ['autoMin', 'xBoost', 'showWire', 'showRays', 'showProfiles']) {
+        $(id).addEventListener('change', rebuild);
+      }
+
+      $('preset').addEventListener('change', () => {
+        applyPreset($('preset').value);
+        rebuild();
+      });
+
+      $('resetView').addEventListener('click', () => {
+        camera.position.set(5.2, -6.0, 3.6);
+        controls.target.set(0, 0, 0);
+        controls.update();
+      });
+
+      $('copyLink').addEventListener('click', async () => {
+        const p = getParams();
+        const qs = new URLSearchParams({
+          s: p.sphere,
+          c: p.cylinder,
+          a: p.axis,
+          d: p.diameter,
+          bt: p.baseThickness,
+          mt: p.minThickness,
+          n: p.refractiveIndex,
+          xs: p.xScale,
+          cg: p.curveGain,
+          op: p.opacity,
+          res: p.resolution,
+          xb: p.xBoost ? 1 : 0,
+          wire: p.showWire ? 1 : 0,
+          rays: p.showRays ? 1 : 0,
+          prof: p.showProfiles ? 1 : 0
+        });
+        const url = `${location.origin}${location.pathname}?${qs.toString()}`;
+        try {
+          await navigator.clipboard.writeText(url);
+          showToast('已复制当前参数链接');
+        } catch {
+          showToast('浏览器禁止复制，可手动复制地址栏参数');
+          history.replaceState(null, '', `?${qs.toString()}`);
+        }
+      });
+    }
+
+    function applyPreset(value) {
+      const presets = {
+        myopia: { sphere: -3.00, cylinder: 0, axis: 180, curveGain: 1.6, xScale: 1 },
+        hyperopia: { sphere: 3.00, cylinder: 0, axis: 180, curveGain: 1.6, xScale: 1 },
+        astigMinus: { sphere: -2.00, cylinder: -1.50, axis: 180, curveGain: 2.0, xScale: 1.35 },
+        astigPlus: { sphere: 2.00, cylinder: 1.50, axis: 90, curveGain: 2.0, xScale: 1.35 },
+        mixed: { sphere: 1.00, cylinder: -3.00, axis: 45, curveGain: 2.2, xScale: 1.5 }
+      };
+      const preset = presets[value];
+      if (!preset) return;
+      for (const [key, val] of Object.entries(preset)) {
+        $(key).value = String(val);
+        $(`${key}Range`).value = String(val);
+      }
+    }
+
+    function loadFromQuery() {
+      const qs = new URLSearchParams(location.search);
+      const map = {
+        s: 'sphere',
+        c: 'cylinder',
+        a: 'axis',
+        d: 'diameter',
+        bt: 'baseThickness',
+        mt: 'minThickness',
+        n: 'refractiveIndex',
+        xs: 'xScale',
+        cg: 'curveGain',
+        op: 'opacity',
+        res: 'resolution'
+      };
+      for (const [shortKey, key] of Object.entries(map)) {
+        if (!qs.has(shortKey)) continue;
+        const val = Number(qs.get(shortKey));
+        if (!Number.isFinite(val)) continue;
+        $(key).value = String(val);
+        $(`${key}Range`).value = String(val);
+      }
+      if (qs.has('xb')) $('xBoost').checked = qs.get('xb') !== '0';
+      if (qs.has('wire')) $('showWire').checked = qs.get('wire') !== '0';
+      if (qs.has('rays')) $('showRays').checked = qs.get('rays') !== '0';
+      if (qs.has('prof')) $('showProfiles').checked = qs.get('prof') !== '0';
+    }
+
+    function makeLensGeometry(params) {
+      const rings = clamp(params.resolution, 24, 150);
+      const sectors = Math.max(72, Math.round(rings * 2));
+      const pointCount = (rings + 1) * sectors;
+      const radiusScene = 2.2 * (params.diameter / 65);
+      const baseScene = params.baseThickness * UNIT_PER_MM_AT_DEFAULT;
+      const minScene = params.minThickness * UNIT_PER_MM_AT_DEFAULT;
+      const diameterScale = params.diameter / 65;
+      const xBoostGain = params.xBoost ? Math.sqrt(params.xScale) : 1;
+      const powerIndexCorrection = 1.6 / params.refractiveIndex;
+      const gain = 0.044 * params.curveGain * xBoostGain * diameterScale * diameterScale * powerIndexCorrection;
+      const axisRad = params.axis * DEG;
+      const sinA = Math.sin(axisRad);
+      const cosA = Math.cos(axisRad);
+
+      const samples = [];
+      let minRaw = Infinity;
+      let maxRaw = -Infinity;
+
+      for (let i = 0; i <= rings; i++) {
+        const r = i / rings;
+        for (let j = 0; j < sectors; j++) {
+          const theta = (j / sectors) * Math.PI * 2;
+          const x = r * Math.cos(theta);
+          const y = r * Math.sin(theta);
+          const perp = -sinA * x + cosA * y;
+          const r2 = x * x + y * y;
+          const powerTerm = params.sphere * r2 + params.cylinder * perp * perp;
+          const profile = -powerTerm;
+          const rawThickness = baseScene + gain * profile;
+          minRaw = Math.min(minRaw, rawThickness);
+          maxRaw = Math.max(maxRaw, rawThickness);
+          samples.push({ x, y, r, theta, thickness: rawThickness, powerTerm });
+        }
+      }
+
+      const shift = params.autoMin ? (minScene - minRaw) : Math.max(0, minScene - minRaw);
+      const positions = new Float32Array(pointCount * 2 * 3);
+      const colors = new Float32Array(pointCount * 2 * 3);
+      let minT = Infinity;
+      let maxT = -Infinity;
+      let maxZ = 0;
+
+      for (let i = 0; i < samples.length; i++) {
+        const s = samples[i];
+        const t = Math.max(minScene * 0.35, s.thickness + shift);
+        minT = Math.min(minT, t);
+        maxT = Math.max(maxT, t);
+        maxZ = Math.max(maxZ, t / 2);
+
+        const px = s.x * radiusScene * params.xScale;
+        const py = s.y * radiusScene;
+        const frontIndex = i * 3;
+        const backIndex = (pointCount + i) * 3;
+
+        positions[frontIndex] = px;
+        positions[frontIndex + 1] = py;
+        positions[frontIndex + 2] = t / 2;
+
+        positions[backIndex] = px;
+        positions[backIndex + 1] = py;
+        positions[backIndex + 2] = -t / 2;
+      }
+
+      const diffT = Math.max(1e-6, maxT - minT);
+      for (let i = 0; i < samples.length; i++) {
+        const t = Math.max(minScene * 0.35, samples[i].thickness + shift);
+        const k = clamp((t - minT) / diffT, 0, 1);
+        const color = new THREE.Color();
+        color.setHSL(0.56 - 0.12 * k, 0.84, 0.64 - 0.12 * k);
+        const frontIndex = i * 3;
+        const backIndex = (pointCount + i) * 3;
+        colors[frontIndex] = color.r;
+        colors[frontIndex + 1] = color.g;
+        colors[frontIndex + 2] = color.b;
+        colors[backIndex] = color.r;
+        colors[backIndex + 1] = color.g;
+        colors[backIndex + 2] = color.b;
+      }
+
+      const indices = [];
+      const idx = (i, j) => i * sectors + ((j % sectors + sectors) % sectors);
+
+      for (let i = 0; i < rings; i++) {
+        for (let j = 0; j < sectors; j++) {
+          const a = idx(i, j);
+          const b = idx(i + 1, j);
+          const c = idx(i + 1, j + 1);
+          const d = idx(i, j + 1);
+
+          indices.push(a, b, c, a, c, d);
+
+          const ab = pointCount + a;
+          const bb = pointCount + b;
+          const cb = pointCount + c;
+          const db = pointCount + d;
+          indices.push(ab, cb, bb, ab, db, cb);
+        }
+      }
+
+      for (let j = 0; j < sectors; j++) {
+        const f1 = idx(rings, j);
+        const f2 = idx(rings, j + 1);
+        const b1 = pointCount + f1;
+        const b2 = pointCount + f2;
+        indices.push(f1, f2, b2, f1, b2, b1);
+      }
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      geometry.setIndex(indices);
+      geometry.computeVertexNormals();
+
+      return {
+        geometry,
+        rings,
+        sectors,
+        radiusScene,
+        minT,
+        maxT,
+        maxZ,
+        samples,
+        pointCount,
+        axisRad
+      };
+    }
+
+    function makeAxisLines(params, lensData) {
+      const group = new THREE.Group();
+      const r = lensData.radiusScene * 1.05;
+      const z = lensData.maxZ + 0.035;
+      const axis = params.axis * DEG;
+      const axisPts = [
+        new THREE.Vector3(-Math.cos(axis) * r * params.xScale, -Math.sin(axis) * r, z),
+        new THREE.Vector3(Math.cos(axis) * r * params.xScale, Math.sin(axis) * r, z)
+      ];
+      const perp = axis + Math.PI / 2;
+      const perpPts = [
+        new THREE.Vector3(-Math.cos(perp) * r * params.xScale, -Math.sin(perp) * r, z + 0.012),
+        new THREE.Vector3(Math.cos(perp) * r * params.xScale, Math.sin(perp) * r, z + 0.012)
+      ];
+      const axisMat = new THREE.LineBasicMaterial({ color: 0xfb7185, transparent: true, opacity: 0.95 });
+      const perpMat = new THREE.LineBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.90 });
+      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(axisPts), axisMat));
+      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(perpPts), perpMat));
+      return group;
+    }
+
+    function makeProfiles(params, lensData) {
+      const group = new THREE.Group();
+      const matXFront = new THREE.LineBasicMaterial({ color: 0x93c5fd, transparent: true, opacity: 0.95 });
+      const matXBack = new THREE.LineBasicMaterial({ color: 0x60a5fa, transparent: true, opacity: 0.55 });
+      const matYFront = new THREE.LineBasicMaterial({ color: 0xc4b5fd, transparent: true, opacity: 0.95 });
+      const matYBack = new THREE.LineBasicMaterial({ color: 0xa78bfa, transparent: true, opacity: 0.55 });
+      const axisRad = params.axis * DEG;
+      const sinA = Math.sin(axisRad);
+      const cosA = Math.cos(axisRad);
+      const radiusScene = lensData.radiusScene;
+      const diameterScale = params.diameter / 65;
+      const xBoostGain = params.xBoost ? Math.sqrt(params.xScale) : 1;
+      const powerIndexCorrection = 1.6 / params.refractiveIndex;
+      const gain = 0.044 * params.curveGain * xBoostGain * diameterScale * diameterScale * powerIndexCorrection;
+      const baseScene = params.baseThickness * UNIT_PER_MM_AT_DEFAULT;
+      const minScene = params.minThickness * UNIT_PER_MM_AT_DEFAULT;
+
+      function calcShift() {
+        let minRaw = Infinity;
+        const steps = 220;
+        for (let i = 0; i <= steps; i++) {
+          const rr = i / steps;
+          for (let j = 0; j < steps; j += 4) {
+            const th = (j / steps) * Math.PI * 2;
+            const x = rr * Math.cos(th);
+            const y = rr * Math.sin(th);
+            const perp = -sinA * x + cosA * y;
+            const raw = baseScene + gain * (-(params.sphere * rr * rr + params.cylinder * perp * perp));
+            minRaw = Math.min(minRaw, raw);
+          }
+        }
+        return params.autoMin ? (minScene - minRaw) : Math.max(0, minScene - minRaw);
+      }
+
+      const shift = calcShift();
+      function thicknessAt(x, y) {
+        const r2 = x * x + y * y;
+        const perp = -sinA * x + cosA * y;
+        return Math.max(minScene * 0.35, baseScene + gain * (-(params.sphere * r2 + params.cylinder * perp * perp)) + shift);
+      }
+
+      function addLine(axisName, front, mat) {
+        const pts = [];
+        const steps = 160;
+        for (let i = 0; i <= steps; i++) {
+          const u = -1 + (2 * i) / steps;
+          const x = axisName === 'x' ? u : 0;
+          const y = axisName === 'y' ? u : 0;
+          const t = thicknessAt(x, y);
+          pts.push(new THREE.Vector3(x * radiusScene * params.xScale, y * radiusScene, front ? t / 2 + 0.018 : -t / 2 - 0.018));
+        }
+        group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
+      }
+
+      addLine('x', true, matXFront);
+      addLine('x', false, matXBack);
+      addLine('y', true, matYFront);
+      addLine('y', false, matYBack);
+      return group;
+    }
+
+    function makeRays(params, lensData) {
+      const group = new THREE.Group();
+      const incoming = [];
+      const outgoing = [];
+      const axisRad = params.axis * DEG;
+      const sinA = Math.sin(axisRad);
+      const cosA = Math.cos(axisRad);
+      const rScene = lensData.radiusScene;
+      const zIn = -4.8;
+      const zBefore = -lensData.maxZ - 0.28;
+      const zAfter = lensData.maxZ + 0.28;
+      const zOut = 5.2;
+      const samples = [-0.72, -0.36, 0, 0.36, 0.72];
+
+      for (const ux of samples) {
+        for (const uy of samples) {
+          if (ux * ux + uy * uy > 0.84 * 0.84) continue;
+          if (Math.abs(ux) < 0.001 && Math.abs(uy) < 0.001) continue;
+          const x = ux * rScene * params.xScale;
+          const y = uy * rScene;
+          incoming.push(x, y, zIn, x, y, zBefore);
+
+          const r2 = ux * ux + uy * uy;
+          const perp = -sinA * ux + cosA * uy;
+          const meridianMix = r2 < 1e-6 ? 0 : (perp * perp) / r2;
+          const pEff = params.sphere + params.cylinder * meridianMix;
+          let ex = x;
+          let ey = y;
+
+          if (Math.abs(pEff) > 0.12) {
+            const focus = clamp(14 / Math.abs(pEff), 2.2, 16);
+            const dz = zOut - zAfter;
+            if (pEff > 0) {
+              const k = dz / focus;
+              ex = x * (1 - k);
+              ey = y * (1 - k);
+            } else {
+              const k = dz / focus;
+              ex = x * (1 + k);
+              ey = y * (1 + k);
+            }
+          }
+          outgoing.push(x, y, zAfter, ex, ey, zOut);
+        }
+      }
+
+      const inGeom = new THREE.BufferGeometry();
+      inGeom.setAttribute('position', new THREE.Float32BufferAttribute(incoming, 3));
+      const outGeom = new THREE.BufferGeometry();
+      outGeom.setAttribute('position', new THREE.Float32BufferAttribute(outgoing, 3));
+      const inMat = new THREE.LineBasicMaterial({ color: 0x64748b, transparent: true, opacity: 0.40 });
+      const outMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.78 });
+      group.add(new THREE.LineSegments(inGeom, inMat));
+      group.add(new THREE.LineSegments(outGeom, outMat));
+      return group;
+    }
+
+    function disposeObject(obj) {
+      obj.traverse((child) => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
+          else child.material.dispose();
+        }
+      });
+    }
+
+    function rebuild() {
+      const params = getParams();
+      if (lensGroup) {
+        scene.remove(lensGroup);
+        disposeObject(lensGroup);
+      }
+
+      const lensData = makeLensGeometry(params);
+      lensGroup = new THREE.Group();
+
+      const material = new THREE.MeshPhysicalMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: params.opacity,
+        roughness: 0.22,
+        metalness: 0.0,
+        transmission: 0.35,
+        thickness: 0.8,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      });
+      const mesh = new THREE.Mesh(lensData.geometry, material);
+      lensGroup.add(mesh);
+
+      const edgeMat = new THREE.LineBasicMaterial({ color: 0xe0f2fe, transparent: true, opacity: 0.55 });
+      const edgeGeom = new THREE.EdgesGeometry(lensData.geometry, 24);
+      lensGroup.add(new THREE.LineSegments(edgeGeom, edgeMat));
+
+      if (params.showWire) {
+        const wireGeom = new THREE.WireframeGeometry(lensData.geometry);
+        const wireMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.11 });
+        lensGroup.add(new THREE.LineSegments(wireGeom, wireMat));
+      }
+
+      lensGroup.add(makeAxisLines(params, lensData));
+      if (params.showProfiles) lensGroup.add(makeProfiles(params, lensData));
+      if (params.showRays) lensGroup.add(makeRays(params, lensData));
+
+      scene.add(lensGroup);
+      currentStats = { params, lensData };
+      updateReadout(params, lensData);
+    }
+
+    function updateReadout(params, lensData) {
+      const minMm = lensData.minT / UNIT_PER_MM_AT_DEFAULT;
+      const maxMm = lensData.maxT / UNIT_PER_MM_AT_DEFAULT;
+      $('minOut').textContent = `${minMm.toFixed(2)} mm`;
+      $('maxOut').textContent = `${maxMm.toFixed(2)} mm`;
+      $('diffOut').textContent = `${(maxMm - minMm).toFixed(2)} mm`;
+
+      const sphereAbs = Math.abs(params.sphere);
+      if (sphereAbs < 0.12) {
+        $('focusOut').textContent = '近似无穷远';
+      } else {
+        const f = 1 / params.sphere;
+        $('focusOut').textContent = `${f > 0 ? '+' : ''}${f.toFixed(2)} m`;
+      }
+
+      let type = '平光 / 弱处方';
+      if (params.sphere < -0.125 && Math.abs(params.cylinder) < 0.125) type = '近视矫正负球镜：中心薄，边缘厚';
+      else if (params.sphere > 0.125 && Math.abs(params.cylinder) < 0.125) type = '远视矫正正球镜：中心厚，边缘薄';
+      else if (Math.abs(params.cylinder) >= 0.125) type = '散光矫正柱镜 / 复合镜片：两个主方向曲率不同';
+
+      const axis = Math.round(params.axis);
+      const rx = `${formatD(params.sphere)} ${params.cylinder >= 0 ? '+' : ''}${params.cylinder.toFixed(2)}D × ${axis}°`;
+      $('rxOut').innerHTML = `<strong>等效处方：</strong>${rx}<br><strong>模型判断：</strong>${type}<br><strong>横向缩放：</strong>×${params.xScale.toFixed(2)}；<strong>曲率夸张：</strong>×${params.curveGain.toFixed(2)}`;
+
+      const tooMuch = (maxMm - minMm) > 20 || maxMm > 28;
+      if (tooMuch) {
+        $('diffOut').innerHTML = `<span class="warning">${(maxMm - minMm).toFixed(2)} mm</span>`;
+      }
+    }
+
+    function showToast(text) {
+      const el = $('toast');
+      el.textContent = text;
+      el.classList.add('show');
+      clearTimeout(showToast.timer);
+      showToast.timer = setTimeout(() => el.classList.remove('show'), 1800);
+    }
+
+    function onResize() {
+      const rect = viewport.getBoundingClientRect();
+      const w = Math.max(1, rect.width);
+      const h = Math.max(1, rect.height);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h, false);
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    window.addEventListener('resize', onResize);
+    bindInputs();
+    loadFromQuery();
+    onResize();
+    rebuild();
+    animate();
+  </script>
+</body>
+</html>
